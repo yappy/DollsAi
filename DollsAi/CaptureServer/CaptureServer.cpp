@@ -3,6 +3,8 @@
 #include "SimpleCapture.h"
 #include "winenum.h"
 
+#include "strconv.h"
+#include <nlohmann/json.hpp>
 #include <stdio.h>
 
 #pragma comment(lib, "windowsapp.lib")
@@ -80,11 +82,21 @@ void write_bmp(const std::vector<uint8_t> &buf, int w, int h)
 
 int main(int argc, char *argv[])
 {
+    setlocale(LC_CTYPE, "");
     winrt::init_apartment(winrt::apartment_type::single_threaded);
 
     auto windows = EnumerateWindows();
-    for (const auto &win : windows) {
-        wprintf(L"%p %s\n", win.Hwnd(), win.Title().c_str());
+    {
+        auto json = nlohmann::json::array();
+        for (const auto& win : windows) {
+            wprintf(L"%p %s\n", win.Hwnd(), win.Title().c_str());
+            nlohmann::json map = {
+                {"hwnd", std::to_string(reinterpret_cast<uint64_t>(win.Hwnd()))},
+                {"title", wide_to_utf8(win.Title())},
+            };
+            json.push_back(map);
+        }
+        puts(json.dump().c_str());
     }
 
     HWND hwnd = nullptr;
