@@ -96,7 +96,7 @@ int main(int argc, char *argv[])
             };
             json.push_back(map);
         }
-        puts(json.dump().c_str());
+        puts(json.dump(2).c_str());
     }
 
     HWND hwnd = nullptr;
