@@ -5,7 +5,9 @@
 
 #include "strconv.h"
 #include <nlohmann/json.hpp>
+
 #include <stdio.h>
+#include <unordered_map>
 
 #pragma comment(lib, "windowsapp.lib")
 #pragma comment(lib, "dwmapi.lib")
@@ -80,23 +82,77 @@ void write_bmp(const std::vector<uint8_t> &buf, int w, int h)
     fwrite(bmpbuf.data(), 1, bmpbuf.size(), fp);
 }
 
-int main(int argc, char *argv[])
-{
-    setlocale(LC_CTYPE, "");
-    winrt::init_apartment(winrt::apartment_type::single_threaded);
-
-    auto windows = EnumerateWindows();
+namespace cmd {
+    nlohmann::json enum_windows(const nlohmann::json& args)
     {
+        auto windows = EnumerateWindows();
+
         auto json = nlohmann::json::array();
         for (const auto& win : windows) {
-            wprintf(L"%p %s\n", win.Hwnd(), win.Title().c_str());
             nlohmann::json map = {
                 {"hwnd", std::to_string(reinterpret_cast<uint64_t>(win.Hwnd()))},
                 {"title", wide_to_utf8(win.Title())},
             };
             json.push_back(map);
         }
-        puts(json.dump(2).c_str());
+
+        return json;
+    }
+}
+
+namespace {
+    using CmdFunc = std::function<nlohmann::json(const nlohmann::json&)>;
+    const std::unordered_map<std::string, CmdFunc> cmd_map = {
+        {"enum_windows", cmd::enum_windows},
+    };
+
+    nlohmann::json error_json(const char* msg)
+    {
+        auto obj = nlohmann::json::object();
+        obj["message"] = msg;
+
+        return nlohmann::json{ { "error", obj } };
+    }
+
+    nlohmann::json process_cmd(const nlohmann::json& cmdjson)
+    {
+        auto name = cmdjson["cmd"].get<std::string>();
+        auto it = cmd_map.find(name);
+        if (it != cmd_map.end()) {
+            return (it->second)(cmdjson);
+        }
+        else {
+            throw std::exception("Unndefined command");
+        }
+    }
+
+}
+
+int main(int argc, char *argv[])
+{
+    setlocale(LC_CTYPE, "");
+    winrt::init_apartment(winrt::apartment_type::single_threaded);
+
+    while (true) {
+        std::string cmdstr;
+        do {
+            char buf[1024];
+            if (fgets(buf, sizeof(buf), stdin) == nullptr) {
+                // Error or EOF
+                return EXIT_FAILURE;
+            }
+            cmdstr += buf;
+            // wait for "...\n\n"
+        } while (cmdstr.size() < 2 || cmdstr.at(cmdstr.size() - 1) != '\n' || cmdstr.at(cmdstr.size() - 2) != '\n');
+
+        try {
+            auto cmdjson = nlohmann::json::parse(cmdstr);
+            auto respjson = process_cmd(cmdjson);
+            printf("%s\n\n", respjson.dump(2).c_str());
+        }
+        catch (std::exception &e) {
+            fprintf(stderr, "%s\n\n", error_json(e.what()).dump(2).c_str());
+        }
     }
 
     HWND hwnd = nullptr;
