@@ -115,14 +115,15 @@ namespace cmd {
         s_capture_item = decltype(CreateCaptureItemForWindow(nullptr))(nullptr);
         s_capture.reset();
 
-        HWND hwnd = nullptr;
-        auto item = CreateCaptureItemForWindow(hwnd);
-        auto capture = std::make_unique<SimpleCapture>(s_device, s_capture_item);
+        uint64_t llhwnd = std::stoull(args["hwnd"].get<std::string>());
+
+        auto item = CreateCaptureItemForWindow(reinterpret_cast<HWND>(llhwnd));
+        auto capture = std::make_unique<SimpleCapture>(s_device, item);
         // set global after succeeded (take care of error case)
         s_capture_item = std::move(item);
         s_capture = std::move(capture);
 
-        return nlohmann::json({ {"result", nullptr} });
+        return nlohmann::json({ {"result", "OK"} });
     }
 
     nlohmann::json capture_stop(const nlohmann::json& args)
@@ -130,7 +131,7 @@ namespace cmd {
         s_capture_item = decltype(CreateCaptureItemForWindow(nullptr))(nullptr);
         s_capture.reset();
 
-        return nlohmann::json({ {"result", nullptr} });
+        return nlohmann::json({ {"result", "OK"} });
     }
 }
 
@@ -138,6 +139,8 @@ namespace {
     using CmdFunc = std::function<nlohmann::json(const nlohmann::json&)>;
     const std::unordered_map<std::string, CmdFunc> cmd_map = {
         {"enum_windows", cmd::enum_windows},
+        {"capture_start", cmd::capture_start},
+        {"capture_end", cmd::capture_stop},
     };
 
     nlohmann::json error_json(const char* msg)
