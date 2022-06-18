@@ -12,6 +12,7 @@
 #pragma comment(lib, "windowsapp.lib")
 #pragma comment(lib, "dwmapi.lib")
 
+#pragma region bmp
 #pragma pack(push, 2)
 struct BitmapHeader
 {
@@ -81,22 +82,55 @@ void write_bmp(const std::vector<uint8_t> &buf, int w, int h)
     fwrite(&header, 1, sizeof(header), fp);
     fwrite(bmpbuf.data(), 1, bmpbuf.size(), fp);
 }
+#pragma endregion
+
+namespace {
+    decltype(CreateD3DDevice()) s_d3d_device;
+    decltype(s_d3d_device.as<IDXGIDevice>()) s_dxgi_device;
+    decltype(CreateDirect3DDevice(s_dxgi_device.get())) s_device;
+
+    decltype(CreateCaptureItemForWindow(nullptr)) s_capture_item = { nullptr };
+    std::unique_ptr<SimpleCapture> s_capture;
+}
 
 namespace cmd {
     nlohmann::json enum_windows(const nlohmann::json& args)
     {
         auto windows = EnumerateWindows();
 
-        auto json = nlohmann::json::array();
+        auto arrayjson = nlohmann::json::array();
         for (const auto& win : windows) {
-            nlohmann::json map = {
+            nlohmann::json entry = {
                 {"hwnd", std::to_string(reinterpret_cast<uint64_t>(win.Hwnd()))},
                 {"title", wide_to_utf8(win.Title())},
             };
-            json.push_back(map);
+            arrayjson.push_back(entry);
         }
 
-        return json;
+        return nlohmann::json({ {"result", arrayjson} });
+    }
+
+    nlohmann::json capture_start(const nlohmann::json& args)
+    {
+        s_capture_item = decltype(CreateCaptureItemForWindow(nullptr))(nullptr);
+        s_capture.reset();
+
+        HWND hwnd = nullptr;
+        auto item = CreateCaptureItemForWindow(hwnd);
+        auto capture = std::make_unique<SimpleCapture>(s_device, s_capture_item);
+        // set global after succeeded (take care of error case)
+        s_capture_item = std::move(item);
+        s_capture = std::move(capture);
+
+        return nlohmann::json({ {"result", nullptr} });
+    }
+
+    nlohmann::json capture_stop(const nlohmann::json& args)
+    {
+        s_capture_item = decltype(CreateCaptureItemForWindow(nullptr))(nullptr);
+        s_capture.reset();
+
+        return nlohmann::json({ {"result", nullptr} });
     }
 }
 
@@ -125,13 +159,16 @@ namespace {
             throw std::exception("Unndefined command");
         }
     }
-
 }
 
 int main(int argc, char *argv[])
 {
     setlocale(LC_CTYPE, "");
     winrt::init_apartment(winrt::apartment_type::single_threaded);
+
+    s_d3d_device = CreateD3DDevice();
+    s_dxgi_device = s_d3d_device.as<IDXGIDevice>();
+    s_device = CreateDirect3DDevice(s_dxgi_device.get());
 
     while (true) {
         std::string cmdstr;
@@ -153,27 +190,6 @@ int main(int argc, char *argv[])
         catch (std::exception &e) {
             fprintf(stderr, "%s\n\n", error_json(e.what()).dump(2).c_str());
         }
-    }
-
-    HWND hwnd = nullptr;
-    wprintf(L"\nInput HWND: ");
-    wscanf_s(L"%p", &hwnd);
-
-    _putws(L"Initializing...");
-    auto d3dDevice = CreateD3DDevice();
-    auto dxgiDevice = d3dDevice.as<IDXGIDevice>();
-    auto device = CreateDirect3DDevice(dxgiDevice.get());
-    auto item = CreateCaptureItemForWindow(hwnd);
-    auto cap = std::make_unique<SimpleCapture>(device, item);
-
-    cap->StartCapture();
-    for (;;) {
-        auto[buf, w, h] = cap->TryGetNextFrame();
-        if (w == 0 && h == 0) {
-            continue;
-        }
-        write_bmp(buf, w, h);
-        break;
     }
 
     return 0;
