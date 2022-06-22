@@ -19,3 +19,9 @@
 
 #include <windows.ui.composition.interop.h>
 #include <DispatcherQueue.h>
+
+// External libraries
+#include "strconv.h"
+#include <nlohmann/json.hpp>
+#include <opencv2/opencv.hpp>
+#include <opencv2/imgcodecs.hpp>

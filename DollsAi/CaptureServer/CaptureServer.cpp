@@ -3,14 +3,16 @@
 #include "SimpleCapture.h"
 #include "winenum.h"
 
-#include "strconv.h"
-#include <nlohmann/json.hpp>
-
 #include <stdio.h>
 #include <unordered_map>
 
 #pragma comment(lib, "windowsapp.lib")
 #pragma comment(lib, "dwmapi.lib")
+#ifdef _DEBUG
+#pragma comment(lib, "opencv_world460d.lib")
+#else
+#pragma comment(lib, "opencv_world460.lib")
+#endif
 
 #pragma region bmp
 #pragma pack(push, 2)
@@ -133,6 +135,31 @@ namespace cmd {
 
         return nlohmann::json({ {"result", "OK"} });
     }
+
+    nlohmann::json get_frame(const nlohmann::json& args)
+    {
+        if (s_capture == nullptr) {
+            throw std::exception("Capture not started");
+        }
+        do {
+            auto [buf, w, h] = s_capture->TryGetNextFrame();
+            if (buf.empty()) {
+                continue;
+            }
+            cv::Mat m(h, w, CV_8UC3);
+            for (int y = 0; y < m.rows; y++) {
+                auto p = m.ptr<uint8_t>(y);
+                for (int x = 0; x < m.cols; x++) {
+                    p[x * 3 + 0] = buf.at(4 * (y * w + x) + 0);
+                    p[x * 3 + 1] = buf.at(4 * (y * w + x) + 1);
+                    p[x * 3 + 2] = buf.at(4 * (y * w + x) + 2);
+                }
+            }
+            cv::imwrite("test.bmp", m);
+        } while (false);
+
+        return nlohmann::json();
+    }
 }
 
 namespace {
@@ -141,6 +168,7 @@ namespace {
         {"enum_windows", cmd::enum_windows},
         {"capture_start", cmd::capture_start},
         {"capture_end", cmd::capture_stop},
+        {"get_frame", cmd::get_frame},
     };
 
     nlohmann::json error_json(const char* msg)
